@@ -15,8 +15,8 @@ const DELEGATOR   = process.env.DELEGATOR || 'ecency';        // required
 const POSTING_WIF = process.env.POSTING_WIF;      // required (posting key)
 const DRY_RUN     = process.env.DRY_RUN === '1';  // optional dry-run
 
-if (!DELEGATOR || !POSTING_WIF) {
-  console.error('Please set DELEGATOR and POSTING_WIF env vars.');
+if (!POSTING_WIF) {
+  console.error('Please set POSTING_WIF and matching DELEGATOR env vars.');
   process.exit(1);
 }
 
