@@ -10,7 +10,7 @@
 
 const dhive = require('@hiveio/dhive');
 
-const HIVE_NODE   = process.env.HIVE_NODE || 'https://api.hive.blog';
+const HIVE_NODE   = process.env.HIVE_NODE || 'https://hapi.ecency.com';
 const DELEGATOR   = process.env.DELEGATOR || 'ecency';        // required
 const POSTING_WIF = process.env.POSTING_WIF;      // required (posting key)
 const DRY_RUN     = process.env.DRY_RUN === '1';  // optional dry-run
@@ -20,7 +20,7 @@ if (!POSTING_WIF) {
   process.exit(1);
 }
 
-const client = new dhive.Client([HIVE_NODE], { timeout: 8_000 });
+const client = new dhive.Client([HIVE_NODE, 'https://api.openhive.network', 'https://techcoderx.com', 'https://rpc.mahdiyari.info'], { timeout: 8_000 });
 
 const DAYS_90_MS = 90 * 24 * 60 * 60 * 1000;
 
