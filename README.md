@@ -25,13 +25,17 @@ DATE=2026-11-21 HISTORY_FILE=./data/rc-monitor-history.jsonl node rc-monitor.js
 | `below_1_comment` | current RC below one average comment |
 | `below_3_comments` | current RC below three average comments |
 | `max_below_5_comments` | even a full RC tank holds fewer than five comments |
+| `max_below_5b`, `max_below_15b` | full RC tank under 5B / 15B RC (absolute, for comparing with the 15B signup grant) |
 | `holding_ecency_rc` | authors holding a direct RC delegation from @ecency |
 | `active_topups` | active paid top-ups (null when `EPOINTS_UA` is unset or ePoints is down) |
 | `short[]` | every author below three comments, with current/max/received RC, account age, `comment_ops` and `root_ops` that day (both include edits) |
 
 The day's first and last block are found by timestamp, then the blocks are
 streamed in chunks; a short chunk or broken block linkage aborts the run. Any
-RPC failure exits non-zero and writes nothing for that day (the unit retries).
+RPC failure, or malformed or partial data (bad timestamps, missing
+transactions, non-numeric RC, missing or duplicated account rows), exits
+non-zero and writes nothing for that day. The journal line repeats the counts
+and names the short accounts.
 
 ### Limits of the numbers
 - **Invisible users.** An account with too little RC to comment never lands on

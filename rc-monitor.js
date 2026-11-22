@@ -11,7 +11,7 @@
 // Exits non-zero on any RPC failure and then writes nothing for that day.
 
 const https = require('https');
-const { run, createRpcClient } = require('./lib/rc-monitor');
+const { run, createRpcClient, formatSummary } = require('./lib/rc-monitor');
 
 const HIVE_NODE = process.env.HIVE_NODE || 'https://api.hive.blog';
 const DELEGATOR = process.env.DELEGATOR || 'ecency';
@@ -45,7 +45,8 @@ function httpGetJson(url) {
 async function fetchActiveTopups() {
   try {
     const rows = await httpGetJson(`${EPOINTS_API}/api/rc-delegations-all`);
-    return new Set((Array.isArray(rows) ? rows : []).map((r) => r.user).filter(Boolean));
+    if (!Array.isArray(rows)) throw new Error('unexpected response shape');
+    return new Set(rows.map((r) => r.user).filter(Boolean));
   } catch (e) {
     console.warn('RC monitor: active top-ups unavailable:', e && e.message ? e.message : e);
     return null;
@@ -62,15 +63,7 @@ async function main() {
     delegator: DELEGATOR,
     fetchTopups: API_UA ? fetchActiveTopups : null
   });
-  console.log(
-    `RC monitor ${s.date}: ${s.authors} Ecency authors; ` +
-    `${s.below_1_comment} below 1 comment, ${s.below_3_comments} below 3 comments, ` +
-    `${s.max_below_5_comments} with a full tank under 5 comments, ` +
-    `${s.holding_ecency_rc} holding @${DELEGATOR} RC, ` +
-    `RC read ${s.snapshot_hours_after_day_end}h after the day ended, ` +
-    `active top-ups ${s.active_topups === null ? 'n/a' : s.active_topups} ` +
-    `(avg comment ${s.avg_comment_rc_b}B RC). History: ${HISTORY_FILE}`
-  );
+  console.log(`${formatSummary(s, DELEGATOR)} History: ${HISTORY_FILE}`);
 }
 
 main().catch((e) => {

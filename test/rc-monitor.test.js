@@ -299,3 +299,56 @@ test('a date before the chain began is refused', async () => {
   const { client, nowSec } = fakeChain({ headIso: '2026-11-22T00:20:00' });
   await assert.rejects(m.run({ client, date: '2026-11-19', historyFile: path.join(tmpDir(), 'h'), delegator: 'ecency', nowSec }), /no blocks/);
 });
+
+test('absolute 5B and 15B tank counts are recorded next to the relative ones', () => {
+  const now = Date.parse('2026-11-21T00:00:00Z') / 1000;
+  const row = (account, max) => ({ account, max_rc: String(max), received_delegated_rc: '0', rc_manabar: { current_mana: String(max), last_update_time: now } });
+  const s = m.summarize({
+    date: DAY,
+    authors: new Map([['a', { comment_ops: 1, root_ops: 0 }], ['b', { comment_ops: 1, root_ops: 0 }], ['c', { comment_ops: 1, root_ops: 0 }]]),
+    rcAccounts: [row('a', 4.8 * B), row('b', 10 * B), row('c', 20 * B)],
+    created: new Map(), avgCommentRc: 1.2 * B, ecencyDelegatees: new Set(), activeTopups: null, nowSec: now
+  });
+  assert.equal(s.max_below_5b, 1);
+  assert.equal(s.max_below_15b, 2);
+});
+
+test('malformed RPC data aborts instead of lowering counts', async () => {
+  const cases = {
+    'header without timestamp': (method, params, orig) => (method === 'get_block_header' ? { header: { timestamp: 'garbage' } } : orig()),
+    'block without transactions': async (method, params, orig) => {
+      const r = await orig();
+      if (method === 'get_block_range') delete r.blocks[5].transactions;
+      return r;
+    },
+    'transaction without operations': async (method, params, orig) => {
+      const r = await orig();
+      if (method === 'get_block_range') r.blocks.forEach((b) => b.transactions.forEach((t) => { delete t.operations; }));
+      return r;
+    },
+    'non-numeric RC': async (method, params, orig) => {
+      const r = await orig();
+      if (method === 'find_rc_accounts') r.rc_accounts[0].max_rc = 'x';
+      return r;
+    },
+    'duplicate RC row in place of an author': async (method, params, orig) => {
+      const r = await orig();
+      if (method === 'find_rc_accounts' && r.rc_accounts.length > 1) r.rc_accounts[1] = r.rc_accounts[0];
+      return r;
+    },
+    'infinite comment cost': (method, params, orig) => (method === 'get_rc_stats' ? { rc_stats: { ops: { comment_operation: { avg_cost: 'Infinity' } } } } : orig())
+  };
+  for (const [name, override] of Object.entries(cases)) {
+    const file = path.join(tmpDir(), 'h');
+    const { client, nowSec } = fakeChain({ headIso: '2026-11-22T00:20:00', ops: EDGE_OPS });
+    const orig = client.call;
+    client.call = async (api, method, params) => override(method, params, () => orig(api, method, params));
+    await assert.rejects(m.run({ client, date: DAY, historyFile: file, delegator: 'ecency', nowSec }), /malformed|invalid|incomplete|not finite|no comment cost/i, name);
+    assert.equal(fs.existsSync(file), false, name);
+  }
+});
+
+test('the journal line names the short accounts', () => {
+  const line = m.formatSummary({ date: DAY, authors: 2, below_1_comment: 1, below_3_comments: 1, max_below_5_comments: 1, max_below_5b: 1, max_below_15b: 1, holding_ecency_rc: 0, snapshot_hours_after_day_end: 0.3, active_topups: null, avg_comment_rc_b: 1.2, short: [{ name: 'alice' }, { name: 'bob' }] }, 'ecency');
+  assert.match(line, /short: alice, bob/);
+});
