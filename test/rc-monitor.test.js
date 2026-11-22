@@ -167,7 +167,8 @@ function fakeChain({ headIso, missed = new Set(), ops = {}, rcOf = () => 4 * B, 
           const b = block(ts(n), ops[ts(n)] || []);
           b.block_id = id(n);
           b.previous = id(n - 1);
-          if (n === breakLinkAt) b.block_id = 'broken';
+          // same block number, different hash: the next block's `previous` no longer matches
+          if (n === breakLinkAt) b.block_id = n.toString(16).padStart(8, '0') + 'bb';
           out.push(b);
         }
         return { blocks: out };
@@ -351,4 +352,33 @@ test('malformed RPC data aborts instead of lowering counts', async () => {
 test('the journal line names the short accounts', () => {
   const line = m.formatSummary({ date: DAY, authors: 2, below_1_comment: 1, below_3_comments: 1, max_below_5_comments: 1, max_below_5b: 1, max_below_15b: 1, holding_ecency_rc: 0, snapshot_hours_after_day_end: 0.3, active_topups: null, avg_comment_rc_b: 1.2, short: [{ name: 'alice' }, { name: 'bob' }] }, 'ecency');
   assert.match(line, /short: alice, bob/);
+});
+
+test('a range shifted by one block is refused (first block must be the one requested)', async () => {
+  const file = path.join(tmpDir(), 'h');
+  const { client, nowSec } = fakeChain({ headIso: '2026-11-22T00:20:00', ops: EDGE_OPS });
+  const orig = client.call;
+  client.call = async (api, method, params) => {
+    // every chunk comes back as n+1 .. n+count: links stay intact, but the
+    // day's first block (and its author) is silently skipped
+    if (method === 'get_block_range') {
+      return orig(api, method, { ...params, starting_block_num: params.starting_block_num + 1 });
+    }
+    return orig(api, method, params);
+  };
+  await assert.rejects(m.run({ client, date: DAY, historyFile: file, delegator: 'ecency', nowSec }), /block number/);
+  assert.equal(fs.existsSync(file), false);
+});
+
+test('a non-numeric received delegation aborts instead of writing null', async () => {
+  const file = path.join(tmpDir(), 'h');
+  const { client, nowSec } = fakeChain({ headIso: '2026-11-22T00:20:00', ops: EDGE_OPS, rcOf: () => 0.5 * B });
+  const orig = client.call;
+  client.call = async (api, method, params) => {
+    const r = await orig(api, method, params);
+    if (method === 'find_rc_accounts') r.rc_accounts[0].received_delegated_rc = 'x';
+    return r;
+  };
+  await assert.rejects(m.run({ client, date: DAY, historyFile: file, delegator: 'ecency', nowSec }), /not finite/);
+  assert.equal(fs.existsSync(file), false);
 });
