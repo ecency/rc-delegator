@@ -382,3 +382,32 @@ test('a non-numeric received delegation aborts instead of writing null', async (
   await assert.rejects(m.run({ client, date: DAY, historyFile: file, delegator: 'ecency', nowSec }), /not finite/);
   assert.equal(fs.existsSync(file), false);
 });
+
+test('an invalid or missing account creation time aborts instead of writing a null age', async () => {
+  for (const created of ['garbage', '', undefined]) {
+    const file = path.join(tmpDir(), 'h');
+    const { client, nowSec } = fakeChain({ headIso: '2026-11-22T00:20:00', ops: EDGE_OPS, rcOf: () => 0.5 * B });
+    const orig = client.call;
+    client.call = async (api, method, params) => {
+      const r = await orig(api, method, params);
+      if (method === 'get_accounts') r[0].created = created;
+      return r;
+    };
+    await assert.rejects(m.run({ client, date: DAY, historyFile: file, delegator: 'ecency', nowSec }), /created/, String(created));
+    assert.equal(fs.existsSync(file), false, String(created));
+  }
+});
+
+test('an invalid creation time on an author who is NOT short still aborts', async () => {
+  const file = path.join(tmpDir(), 'h');
+  // alice is short, bob is not; bob's age is never shown but his data is still malformed
+  const { client, nowSec } = fakeChain({ headIso: '2026-11-22T00:20:00', ops: EDGE_OPS, rcOf: (a) => (a === 'alice' ? 0.5 * B : 4 * B) });
+  const orig = client.call;
+  client.call = async (api, method, params) => {
+    const r = await orig(api, method, params);
+    if (method === 'get_accounts') r.forEach((a) => { if (a.name === 'bob') a.created = 'garbage'; });
+    return r;
+  };
+  await assert.rejects(m.run({ client, date: DAY, historyFile: file, delegator: 'ecency', nowSec }), /created/);
+  assert.equal(fs.existsSync(file), false);
+});
